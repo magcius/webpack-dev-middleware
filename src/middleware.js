@@ -159,7 +159,14 @@ function wrapper(context) {
       let start;
       let end;
 
-      if (rangeHeader && BYTES_RANGE_REGEXP.test(rangeHeader)) {
+      const isFsSupportsStream =
+        typeof context.outputFileSystem.createReadStream === "function";
+
+      if (
+        rangeHeader &&
+        BYTES_RANGE_REGEXP.test(rangeHeader) &&
+        isFsSupportsStream
+      ) {
         const size = await new Promise((resolve) => {
           /** @type {import("fs").lstat} */
           (context.outputFileSystem.lstat)(filename, (error, stats) => {
@@ -235,18 +242,11 @@ function wrapper(context) {
         }
       }
 
-      const isFsSupportsStream =
-        typeof context.outputFileSystem.createReadStream === "function";
-
       let bufferOtStream;
       let byteLength;
 
       try {
-        if (
-          typeof start !== "undefined" &&
-          typeof end !== "undefined" &&
-          isFsSupportsStream
-        ) {
+        if (typeof start !== "undefined" && typeof end !== "undefined") {
           bufferOtStream =
             /** @type {import("fs").createReadStream} */
             (context.outputFileSystem.createReadStream)(filename, {
