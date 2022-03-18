@@ -159,13 +159,10 @@ function wrapper(context) {
       let start;
       let end;
 
-      const isFsSupportsStream =
-        typeof context.outputFileSystem.createReadStream === "function";
-
       if (
         rangeHeader &&
         BYTES_RANGE_REGEXP.test(rangeHeader) &&
-        isFsSupportsStream
+        typeof context.outputFileSystem.createReadStream === "function"
       ) {
         const size = await new Promise((resolve) => {
           /** @type {import("fs").lstat} */
@@ -220,11 +217,42 @@ function wrapper(context) {
             "A malformed 'Range' header was provided. A regular response will be sent for this request."
           );
         } else if (parsedRanges.length > 1) {
-          context.logger.error(
-            "A 'Range' header with multiple ranges was provided. Multiple ranges are not supported, so a regular response will be sent for this request."
+          // Send multipart request
+          setStatusCode(res, 206);
+
+          const oldContentType = getHeaderFromResponse(res, "Content-Type");
+          const boundary = Math.floor(
+            Math.random() * 99999999 + 99999999
+          ).toString(16);
+          setHeaderForResponse(
+            res,
+            "Content-Type",
+            `multipart/byteranges; boundary=${boundary}`
           );
+
+          for (let i = 0; i < parsedRanges.length; i++) {
+            const range = parsedRanges[i];
+            res.write(`--${boundary}\n`);
+            res.write(`Content-Type: ${oldContentType}\n`);
+            res.write(
+              `Content-Range: ${getValueContentRangeHeader(
+                "bytes",
+                size,
+                range
+              )}\n`
+            );
+            const stream = context.outputFileSystem.createReadStream(
+              filename,
+              range
+            );
+            stream.pipe(res);
+          }
+          res.write(`--${boundary}--\n`);
+
+          return;
         }
 
+        // Send normal request.
         if (parsedRanges !== -2 && parsedRanges.length === 1) {
           // Content-Range
           setStatusCode(res, 206);
